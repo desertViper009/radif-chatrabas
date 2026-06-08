@@ -1,12 +1,41 @@
 const express = require("express");
 const cors = require("cors");
-const db = require("./db");
+const sqlite3 = require("sqlite3").verbose(); // সরাসরি sqlite3 মডিউল ইম্পোর্ট করা হলো
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// মেকালের টাইপ ক্যালকুলেট করার হেল্পার ফাংশন
+// সরাসরি এই ফাইলেই ডাটাবেজ কানেকশন তৈরি করা হলো
+const db = new sqlite3.Database("./meals.db", (err) => {
+  if (err) console.error("Database connection error:", err.message);
+  else console.log("Connected to SQLite database.");
+});
+
+// টেবিলগুলো যদি তৈরি করা না থাকে, তবে অটোমেটিক তৈরি করার লজিক
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      room TEXT NOT NULL
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS meals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      member_id INTEGER NOT NULL,
+      morning INTEGER DEFAULT 0,
+      noon INTEGER DEFAULT 0,
+      night INTEGER DEFAULT 0,
+      FOREIGN KEY (member_id) REFERENCES members(id)
+    )
+  `);
+});
+
+// মিলের টাইপ ক্যালকুলেট করার হেল্পার ফাংশন
 const calculateType = (m, d, n) => {
   const key = `${m ? 1 : 0}${d ? 1 : 0}${n ? 1 : 0}`;
 
@@ -25,7 +54,6 @@ const costMap = {
 };
 
 /* ---------- DAILY REPORT ---------- */
-
 app.get("/report/:date", (req, res) => {
   const date = req.params.date;
 
@@ -77,7 +105,6 @@ app.get("/report/:date", (req, res) => {
 });
 
 /* ---------- MEMBERS ---------- */
-
 app.get("/members", (req, res) => {
   db.all("SELECT * FROM members", (err, rows) => {
     if (err) {
@@ -90,7 +117,6 @@ app.get("/members", (req, res) => {
 app.post("/members", (req, res) => {
   const { name, room } = req.body;
   
-  // কলব্যাক যুক্ত করা হয়েছে যাতে ডাটা ইনসার্ট শেষ হলে রেসপন্স যায়
   db.run(
     "INSERT INTO members(name, room) VALUES(?, ?)",
     [name, room],
@@ -104,11 +130,9 @@ app.post("/members", (req, res) => {
 });
 
 /* ---------- MEALS ---------- */
-
 app.post("/meal", (req, res) => {
   const { date, member_id, morning, noon, night } = req.body;
 
-  // কলব্যাক যুক্ত করা হয়েছে যাতে ডাটা ইনসার্ট শেষ হলে রেসপন্স যায়
   db.run(
     `INSERT INTO meals(date, member_id, morning, noon, night)
      VALUES(?, ?, ?, ?, ?)`,
@@ -122,5 +146,6 @@ app.post("/meal", (req, res) => {
   );
 });
 
-// সার্ভার লিসেনিং
-app.listen(5000, () => console.log("Server running on port 5000"));
+// Render ডেপ্লয়মেন্টের জন্য পোর্ট ডাইনামিক করা হলো
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
